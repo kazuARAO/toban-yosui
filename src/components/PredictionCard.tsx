@@ -9,10 +9,22 @@ const PROVIDER_META: Record<string, { label: string; color: string }> = {
   gemini: { label: "Gemini 3.1 Pro", color: "#16a34a" },
 };
 
-const WARN_BADGE: Record<string, string> = {
-  low: "bg-green-100 text-green-800",
-  mid: "bg-yellow-100 text-yellow-800",
-  high: "bg-red-100 text-red-800",
+const WARN_META: Record<string, { label: string; className: string; tip: string }> = {
+  low: {
+    label: "余裕",
+    className: "bg-green-100 text-green-800",
+    tip: "貯水率が取水制限ライン (30%) から十分遠く、当面警戒不要",
+  },
+  mid: {
+    label: "注意",
+    className: "bg-yellow-100 text-yellow-800",
+    tip: "貯水率が低下傾向、配水手配・節水の検討タイミング",
+  },
+  high: {
+    label: "警戒",
+    className: "bg-red-100 text-red-800",
+    tip: "取水制限ライン (30%) が近い、または急減少傾向で緊急対応必要",
+  },
 };
 
 function fmt(v: number | null): string {
@@ -75,7 +87,15 @@ export function PredictionCard({ prediction, baseStorPcnt }: Props) {
       {/* 3 LLM 独立予測 */}
       {llms.length > 0 && (
         <div>
-          <div className="text-xs text-gray-600 mb-2">3 AI の独立予測と気づき</div>
+          <div className="text-xs text-gray-600 mb-1">3 AI の独立予測と気づき</div>
+          <div className="text-xs text-gray-500 mb-2 leading-relaxed">
+            各 AI が 7 日後・30 日後の貯水率を独立に予測し、警戒度を判定。
+            <span className="ml-1 inline-block">
+              🟢 <strong>余裕</strong> = 取水制限 (30%) から十分遠い ／
+              🟡 <strong>注意</strong> = 低下傾向で要検討 ／
+              🔴 <strong>警戒</strong> = 取水制限ライン接近
+            </span>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {llms.map((llm) => {
               const meta = PROVIDER_META[llm.provider] ?? { label: llm.provider, color: "#6b7280" };
@@ -84,8 +104,11 @@ export function PredictionCard({ prediction, baseStorPcnt }: Props) {
                   <div className="flex items-center justify-between mb-2">
                     <div className="font-semibold text-xs" style={{ color: meta.color }}>{meta.label}</div>
                     {llm.warningLevel && (
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${WARN_BADGE[llm.warningLevel] ?? "bg-gray-100"}`}>
-                        {llm.warningLevel.toUpperCase()}
+                      <span
+                        className={`text-xs px-1.5 py-0.5 rounded ${WARN_META[llm.warningLevel]?.className ?? "bg-gray-100"}`}
+                        title={WARN_META[llm.warningLevel]?.tip ?? ""}
+                      >
+                        {WARN_META[llm.warningLevel]?.label ?? llm.warningLevel}
                       </span>
                     )}
                   </div>
