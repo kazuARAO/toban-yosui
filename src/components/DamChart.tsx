@@ -41,6 +41,25 @@ function jstDate(iso: string): string {
   return fmtIsoDate(iso);
 }
 
+/** 10 分粒度の降水量を 1 時間ごとに集計（表示密度を抑える）。
+ *  各時間の終了時刻 (HH:50 ~ HH+1:00) に総和を割り当てるイメージ。
+ */
+function aggregateHourly(
+  series: { observedAt: string; precipitation: number | null }[],
+): { observedAt: string; precipitation: number }[] {
+  const byHour = new Map<string, number>();
+  for (const w of series) {
+    if (w.precipitation === null) continue;
+    const d = new Date(w.observedAt);
+    d.setUTCMinutes(0, 0, 0); // UTC で時間頭にスナップ
+    const key = d.toISOString();
+    byHour.set(key, (byHour.get(key) ?? 0) + w.precipitation);
+  }
+  return [...byHour.entries()]
+    .map(([k, v]) => ({ observedAt: k, precipitation: v }))
+    .sort((a, b) => a.observedAt.localeCompare(b.observedAt));
+}
+
 function mergeWeather(
   obs: ObservationPoint[],
   weather: WeatherStationInfo | null,
@@ -53,9 +72,9 @@ function mergeWeather(
     precipitation: null,
   }));
   if (weather) {
-    // 10 分粒度の series を優先、空なら旧 daily points にフォールバック
     if (weather.series && weather.series.length > 0) {
-      for (const w of weather.series) {
+      // 10 分粒度を時間集計して描画密度を下げる
+      for (const w of aggregateHourly(weather.series)) {
         points.push({
           observedAt: w.observedAt,
           storLvl: null,
@@ -167,13 +186,11 @@ export function DamChart({ data, weather, damName, fullLvl }: Props) {
   const yMin = Math.floor(minLvl - 0.5);
   const yMax = Math.ceil(Math.max(maxLvl, fullLvl ?? maxLvl) + 0.5);
 
-  const seriesPrecipValues = weather?.series
-    .map((w) => w.precipitation)
-    .filter((v): v is number => v !== null) ?? [];
-  // 雨量バーが画面の上 1/4 程度に収まるように、実データ最大値の 4 倍を Y 軸スケールに。
-  // これで貯水位ライン (中段以下) と被らない。
-  const actualPrecipMax = Math.max(5, ...seriesPrecipValues);
-  const precipMax = actualPrecipMax * 4;
+  // 時間集計後の最大値を使って Y 軸スケールを決定。
+  const hourlyRain = weather?.series ? aggregateHourly(weather.series) : [];
+  const hourlyMax = Math.max(5, ...hourlyRain.map((w) => w.precipitation));
+  // 雨量バーが画面の上 1/4 以内に収まるスケール
+  const precipMax = hourlyMax * 4;
 
   const precipByDate = new Map<string, number | null>();
   const tempByDate = new Map<
@@ -223,7 +240,7 @@ export function DamChart({ data, weather, damName, fullLvl }: Props) {
             axisLine={{ stroke: "#0ea5e9" }}
             tickLine={{ stroke: "#0ea5e9" }}
             width={36}
-            label={{ value: "雨量(mm)", angle: 90, position: "insideRight", offset: -34, style: { fontSize: 11, fill: "#0ea5e9" } }}
+            label={{ value: "雨量(mm/h)", angle: 90, position: "insideRight", offset: -34, style: { fontSize: 11, fill: "#0ea5e9" } }}
           />
           <Tooltip
             content={(p) => (
@@ -239,10 +256,10 @@ export function DamChart({ data, weather, damName, fullLvl }: Props) {
           <Bar
             yAxisId="rain"
             dataKey="precipitation"
-            name={weather ? `降水量 (${weather.name})` : "降水量"}
+            name={weather ? `降水量 (${weather.name}, 1h)` : "降水量"}
             fill="#0ea5e9"
             fillOpacity={0.65}
-            maxBarSize={20}
+            maxBarSize={12}
           />
           <Line
             yAxisId="lvl"
