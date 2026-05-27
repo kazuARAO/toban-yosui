@@ -2,6 +2,13 @@
 
 東播用水ダム水位の自動監視・LINE 通知サービス。
 
+## 本番 URL
+
+- **https://toban-yosui.vercel.app** ← 常に最新本番デプロイに追従する安定 URL
+- リポジトリ: https://github.com/kazuARAO/toban-yosui (public)
+- Vercel project: `kazuhiro-arao-s-projects/toban-yosui`
+- Supabase project: `tflzwitbztddzrvlfxnc` (Northeast Asia Tokyo, Free)
+
 ## 背景
 
 - 東播用水土地改良区が管理する **大川瀬ダム** と **呑吐ダム** の水位を自動取得し、農家（特に水利委員）に LINE で通知する
