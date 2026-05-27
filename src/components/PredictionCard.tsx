@@ -75,7 +75,7 @@ export function PredictionCard({ prediction, baseStorPcnt }: Props) {
       {/* 3 LLM 独立予測 */}
       {llms.length > 0 && (
         <div>
-          <div className="text-xs text-gray-600 mb-2">3 LLM の独立予測と気づき</div>
+          <div className="text-xs text-gray-600 mb-2">3 AI の独立予測と気づき</div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {llms.map((llm) => {
               const meta = PROVIDER_META[llm.provider] ?? { label: llm.provider, color: "#6b7280" };
@@ -121,7 +121,7 @@ export function PredictionCard({ prediction, baseStorPcnt }: Props) {
             })}
           </div>
           <div className="text-xs text-gray-500 mt-2 italic">
-            ※ 各 LLM の予測精度は後日 実測値と照合して評価していきます。
+            ※ 各 AI の予測精度は後日 実測値と照合して評価していきます。
           </div>
         </div>
       )}
