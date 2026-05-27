@@ -37,7 +37,7 @@ export default async function Home({
 
       <section className="mb-6">
         <div className="text-xs text-gray-500 mb-2">表示期間: {period.label}</div>
-        <PeriodSelector />
+        <PeriodSelector current={period.key} from={params.from} to={params.to} />
       </section>
 
       <div className="grid gap-8 lg:grid-cols-1">

@@ -1,16 +1,12 @@
-"use client";
-
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useState } from "react";
 import { PERIOD_PRESETS, type PeriodKey } from "@/lib/period";
 
-export function PeriodSelector() {
-  const params = useSearchParams();
-  const current = (params.get("period") ?? "7d") as PeriodKey;
-  const [from, setFrom] = useState(params.get("from") ?? "");
-  const [to, setTo] = useState(params.get("to") ?? "");
+type Props = {
+  current: PeriodKey;
+  from?: string;
+  to?: string;
+};
 
+export function PeriodSelector({ current, from, to }: Props) {
   const buildHref = (key: PeriodKey): string => {
     if (key === "custom") {
       const p = new URLSearchParams();
@@ -25,7 +21,7 @@ export function PeriodSelector() {
   return (
     <div className="flex flex-wrap items-center gap-2">
       {PERIOD_PRESETS.map(({ key, label }) => (
-        <Link
+        <a
           key={key}
           href={buildHref(key)}
           className={`px-3 py-1.5 rounded-md text-sm border ${
@@ -33,28 +29,27 @@ export function PeriodSelector() {
               ? "bg-blue-600 text-white border-blue-600"
               : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
           }`}
-          prefetch={false}
         >
           {label}
-        </Link>
+        </a>
       ))}
       {current === "custom" && (
-        <form action="/" method="get" className="flex items-center gap-2 ml-2">
+        <form action="/" method="get" className="flex items-center gap-2 ml-2 flex-wrap">
           <input type="hidden" name="period" value="custom" />
           <input
             type="date"
             name="from"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
+            defaultValue={from ?? ""}
             className="border rounded px-2 py-1 text-sm"
+            required
           />
           <span className="text-gray-500 text-sm">〜</span>
           <input
             type="date"
             name="to"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
+            defaultValue={to ?? ""}
             className="border rounded px-2 py-1 text-sm"
+            required
           />
           <button
             type="submit"
