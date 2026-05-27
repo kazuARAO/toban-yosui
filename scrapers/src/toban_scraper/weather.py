@@ -107,34 +107,42 @@ ON CONFLICT ("stationCode", "observedDate") DO UPDATE SET
 
 
 def run(target: date | None = None) -> int:
-    """指定日（省略時は昨日）のデータを DB 上の全紐付け観測所について保存。"""
-    if target is None:
-        target = (datetime.now(JST) - timedelta(days=1)).date()
+    """指定日のデータを DB 上の全紐付け観測所について保存。
 
+    target=None の場合は **今日 + 昨日の 2 日分** を取得して upsert する。
+    （cron 実行頻度が遅延しても、当日中の雨を当日中に反映できるように）
+    """
     stations = _load_stations_from_db()
     if not stations:
         print("No weather stations linked to any dam. Run weather_stations.py first.")
         return 0
 
+    if target is None:
+        today = datetime.now(JST).date()
+        targets = [today - timedelta(days=1), today]
+    else:
+        targets = [target]
+
     inserted = 0
     with connect() as conn:
         with conn.cursor() as cur:
-            for name, station_code in stations.items():
-                summary = fetch_daily(station_code, target)
-                cur.execute(
-                    UPSERT_WEATHER_SQL,
-                    {
-                        "station_code": station_code,
-                        "observed_date": target,
-                        **summary,
-                    },
-                )
-                inserted += 1
-                print(
-                    f"  {target} {name} ({station_code}): "
-                    f"rain={summary['precipitation']:.1f}mm "
-                    f"tempAvg={summary['temperature_avg']}"
-                )
+            for t in targets:
+                for name, station_code in stations.items():
+                    summary = fetch_daily(station_code, t)
+                    cur.execute(
+                        UPSERT_WEATHER_SQL,
+                        {
+                            "station_code": station_code,
+                            "observed_date": t,
+                            **summary,
+                        },
+                    )
+                    inserted += 1
+                    print(
+                        f"  {t} {name} ({station_code}): "
+                        f"rain={summary['precipitation']:.1f}mm "
+                        f"tempAvg={summary['temperature_avg']}"
+                    )
         conn.commit()
     return inserted
 
