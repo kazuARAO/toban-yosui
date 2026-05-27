@@ -41,7 +41,7 @@ export default async function Home({
       </section>
 
       <div className="grid gap-8 lg:grid-cols-1">
-        {payloads.map(({ dam, observations, dailyReports, weather, daily, stats }) => {
+        {payloads.map(({ dam, observations, resolution, dailyReports, weather, daily, stats }) => {
           const obs = latestObs(observations);
           const rep = latestReport(dailyReports);
           return (
@@ -94,7 +94,9 @@ export default async function Home({
                 </div>
               </div>
 
-              <div className="mb-2 text-sm font-medium">{period.label} (10 分毎)</div>
+              <div className="mb-2 text-sm font-medium">
+                {period.label} ({resolution.bucketLabel} 粒度・{observations.length.toLocaleString()} 点)
+              </div>
               <DamChartClient
                 data={observations}
                 weather={weather}

@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import type { PeriodRange } from "./period";
 import { ymd } from "./period";
@@ -13,20 +14,20 @@ export type DamSummary = {
 };
 
 export type ObservationPoint = {
-  observedAt: string; // ISO string (10 分粒度)
+  observedAt: string; // ISO string
   storLvl: number | null;
   allSink: number | null;
   allDisch: number | null;
 };
 
 export type DailyReportPoint = {
-  reportDate: string; // YYYY-MM-DD
+  reportDate: string;
   storCap: number | null;
   storPcntIrr: number | null;
 };
 
 export type WeatherPoint = {
-  observedDate: string; // YYYY-MM-DD
+  observedDate: string;
   precipitation: number | null;
   temperatureAvg: number | null;
   temperatureMax: number | null;
@@ -41,7 +42,7 @@ export type WeatherStationInfo = {
 };
 
 export type DailyAggregate = {
-  date: string; // YYYY-MM-DD JST
+  date: string;
   storLvlAvg: number | null;
   storLvlMin: number | null;
   storLvlMax: number | null;
@@ -52,9 +53,9 @@ export type DailyAggregate = {
 };
 
 export type RangeStats = {
-  fromDate: string;     // YYYY-MM-DD
-  toDate: string;       // YYYY-MM-DD
-  totalPrecipitation: number; // mm
+  fromDate: string;
+  toDate: string;
+  totalPrecipitation: number;
   rainyDays: number;
   maxPrecipitation: number | null;
   maxPrecipitationDate: string | null;
@@ -66,51 +67,125 @@ export type RangeStats = {
   storLvlDelta: number | null;
 };
 
+export type ResolutionInfo = {
+  bucketLabel: string;  // 表示用 "10分" / "1時間" / "6時間" / "1日"
+  bucketUnit: "minute" | "hour" | "day"; // Postgres date_trunc 単位
+  bucketSize: number;   // 単位を何個まとめるか (10分 = unit "minute" + size 10)
+};
+
 export type DamPayload = {
   dam: DamSummary;
   observations: ObservationPoint[];
+  resolution: ResolutionInfo;
   dailyReports: DailyReportPoint[];
   weather: WeatherStationInfo | null;
   daily: DailyAggregate[];
   stats: RangeStats;
 };
 
+/** 期間長から表示用解像度を決定。点数を概ね 1,500 以下に保つ。 */
+function selectResolution(from: Date, to: Date): ResolutionInfo {
+  const hours = (to.getTime() - from.getTime()) / 3600_000;
+  if (hours <= 24 * 7) return { bucketLabel: "10分", bucketUnit: "minute", bucketSize: 10 };
+  if (hours <= 24 * 30) return { bucketLabel: "1時間", bucketUnit: "hour", bucketSize: 1 };
+  if (hours <= 24 * 90) return { bucketLabel: "6時間", bucketUnit: "hour", bucketSize: 6 };
+  return { bucketLabel: "1日", bucketUnit: "day", bucketSize: 1 };
+}
+
 function jstYmd(d: Date): string {
   return new Date(d.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** Postgres 側で date_trunc + 集約して観測値を返す。 */
+async function fetchObservations(
+  damId: number,
+  from: Date,
+  to: Date,
+  resolution: ResolutionInfo,
+): Promise<ObservationPoint[]> {
+  // 10 分粒度のときは元データをそのまま返す（date_trunc('minute', ...) では 10 分集約できないため別経路）
+  if (resolution.bucketUnit === "minute" && resolution.bucketSize === 10) {
+    const rows = await prisma.observation.findMany({
+      where: {
+        damId,
+        source: "kawabou",
+        observedAt: { gte: from, lte: to },
+      },
+      orderBy: { observedAt: "asc" },
+      select: { observedAt: true, storLvl: true, allSink: true, allDisch: true },
+    });
+    return rows.map((r) => ({
+      observedAt: r.observedAt.toISOString(),
+      storLvl: r.storLvl,
+      allSink: r.allSink,
+      allDisch: r.allDisch,
+    }));
+  }
+
+  // 1時間/6時間/1日 はラスター集約 SQL
+  const truncExpr =
+    resolution.bucketUnit === "day"
+      ? Prisma.sql`date_trunc('day', "observedAt")`
+      : resolution.bucketSize === 1
+        ? Prisma.sql`date_trunc('hour', "observedAt")`
+        : // 6時間集約: 時刻を6h単位に丸める
+          Prisma.sql`date_trunc('hour', "observedAt") - (EXTRACT(hour FROM "observedAt")::int % ${resolution.bucketSize}) * INTERVAL '1 hour'`;
+
+  const rows = await prisma.$queryRaw<
+    Array<{ bucket: Date; stor_lvl: number | null; all_sink: number | null; all_disch: number | null }>
+  >(
+    Prisma.sql`
+      SELECT
+        ${truncExpr} AS bucket,
+        AVG("storLvl") AS stor_lvl,
+        AVG("allSink") AS all_sink,
+        AVG("allDisch") AS all_disch
+      FROM "Observation"
+      WHERE "damId" = ${damId}
+        AND source = 'kawabou'
+        AND "observedAt" >= ${from}
+        AND "observedAt" <= ${to}
+      GROUP BY bucket
+      ORDER BY bucket ASC
+    `,
+  );
+
+  return rows.map((r) => ({
+    observedAt: r.bucket.toISOString(),
+    storLvl: r.stor_lvl !== null ? Number(r.stor_lvl) : null,
+    allSink: r.all_sink !== null ? Number(r.all_sink) : null,
+    allDisch: r.all_disch !== null ? Number(r.all_disch) : null,
+  }));
 }
 
 function aggregateDaily(
   obs: ObservationPoint[],
   weather: WeatherPoint[],
 ): DailyAggregate[] {
-  const buckets = new Map<
-    string,
-    { lvls: number[] }
-  >();
+  const buckets = new Map<string, number[]>();
   for (const o of obs) {
     if (o.storLvl === null) continue;
     const date = jstYmd(new Date(o.observedAt));
-    if (!buckets.has(date)) buckets.set(date, { lvls: [] });
-    buckets.get(date)!.lvls.push(o.storLvl);
+    if (!buckets.has(date)) buckets.set(date, []);
+    buckets.get(date)!.push(o.storLvl);
   }
   const weatherByDate = new Map<string, WeatherPoint>();
   for (const w of weather) weatherByDate.set(w.observedDate, w);
 
   const dates = new Set<string>([...buckets.keys(), ...weatherByDate.keys()]);
-  const result: DailyAggregate[] = [];
+  const out: DailyAggregate[] = [];
   for (const date of [...dates].sort()) {
-    const bucket = buckets.get(date);
+    const lvls = buckets.get(date);
     const w = weatherByDate.get(date);
     let avg: number | null = null;
     let min: number | null = null;
     let max: number | null = null;
-    if (bucket && bucket.lvls.length > 0) {
-      const sum = bucket.lvls.reduce((a, b) => a + b, 0);
-      avg = sum / bucket.lvls.length;
-      min = Math.min(...bucket.lvls);
-      max = Math.max(...bucket.lvls);
+    if (lvls && lvls.length > 0) {
+      avg = lvls.reduce((a, b) => a + b, 0) / lvls.length;
+      min = Math.min(...lvls);
+      max = Math.max(...lvls);
     }
-    result.push({
+    out.push({
       date,
       storLvlAvg: avg,
       storLvlMin: min,
@@ -121,14 +196,10 @@ function aggregateDaily(
       temperatureMin: w?.temperatureMin ?? null,
     });
   }
-  return result;
+  return out;
 }
 
-function calcStats(
-  daily: DailyAggregate[],
-  from: Date,
-  to: Date,
-): RangeStats {
+function calcStats(daily: DailyAggregate[], from: Date, to: Date): RangeStats {
   let totalPrecip = 0;
   let rainyDays = 0;
   let maxPrecip = -Infinity;
@@ -138,6 +209,7 @@ function calcStats(
   let maxTempDate: string | null = null;
   let storLvlStart: number | null = null;
   let storLvlEnd: number | null = null;
+
   for (const d of daily) {
     if (d.precipitation !== null) {
       totalPrecip += d.precipitation;
@@ -157,6 +229,7 @@ function calcStats(
       storLvlEnd = d.storLvlAvg;
     }
   }
+
   return {
     fromDate: ymd(from),
     toDate: ymd(to),
@@ -164,111 +237,116 @@ function calcStats(
     rainyDays,
     maxPrecipitation: maxPrecip === -Infinity ? null : maxPrecip,
     maxPrecipitationDate: maxPrecipDate,
-    avgTemperature: temps.length ? Math.round((temps.reduce((a, b) => a + b, 0) / temps.length) * 10) / 10 : null,
+    avgTemperature:
+      temps.length
+        ? Math.round((temps.reduce((a, b) => a + b, 0) / temps.length) * 10) / 10
+        : null,
     maxTemperature: maxTemp === -Infinity ? null : Math.round(maxTemp * 10) / 10,
     maxTemperatureDate: maxTempDate,
     storLvlStart,
     storLvlEnd,
-    storLvlDelta: storLvlStart !== null && storLvlEnd !== null ? Math.round((storLvlEnd - storLvlStart) * 100) / 100 : null,
+    storLvlDelta:
+      storLvlStart !== null && storLvlEnd !== null
+        ? Math.round((storLvlEnd - storLvlStart) * 100) / 100
+        : null,
+  };
+}
+
+async function buildDamPayload(
+  dam: {
+    id: number;
+    code: string;
+    name: string;
+    river: string | null;
+    address: string | null;
+    totalCapacity: number | null;
+    nrmlHighStg: number | null;
+  },
+  from: Date,
+  to: Date,
+  resolution: ResolutionInfo,
+): Promise<DamPayload> {
+  // 3 つを並列に
+  const [observations, reports, primaryLink] = await Promise.all([
+    fetchObservations(dam.id, from, to, resolution),
+    prisma.dailyReport.findMany({
+      where: { damId: dam.id },
+      orderBy: { reportDate: "desc" },
+      take: 30,
+      select: { reportDate: true, storCap: true, storPcntIrr: true },
+    }),
+    prisma.damWeatherStation.findFirst({
+      where: { damId: dam.id },
+      orderBy: { priority: "asc" },
+      include: { station: true },
+    }),
+  ]);
+
+  let weather: WeatherStationInfo | null = null;
+  let weatherPoints: WeatherPoint[] = [];
+  if (primaryLink) {
+    const weatherRows = await prisma.weather.findMany({
+      where: {
+        stationCode: primaryLink.stationCode,
+        observedDate: { gte: from, lte: to },
+      },
+      orderBy: { observedDate: "asc" },
+      select: {
+        observedDate: true,
+        precipitation: true,
+        temperatureAvg: true,
+        temperatureMax: true,
+        temperatureMin: true,
+      },
+    });
+    weatherPoints = weatherRows.map((w) => ({
+      observedDate: w.observedDate.toISOString().slice(0, 10),
+      precipitation: w.precipitation,
+      temperatureAvg: w.temperatureAvg,
+      temperatureMax: w.temperatureMax,
+      temperatureMin: w.temperatureMin,
+    }));
+    weather = {
+      code: primaryLink.station.code,
+      name: primaryLink.station.name,
+      label: primaryLink.label,
+      points: weatherPoints,
+    };
+  }
+
+  const daily = aggregateDaily(observations, weatherPoints);
+  const stats = calcStats(daily, from, to);
+
+  return {
+    dam,
+    observations,
+    resolution,
+    dailyReports: reports
+      .map((r) => ({
+        reportDate: r.reportDate.toISOString().slice(0, 10),
+        storCap: r.storCap,
+        storPcntIrr: r.storPcntIrr,
+      }))
+      .reverse(),
+    weather,
+    daily,
+    stats,
   };
 }
 
 export async function getDamsWithSeries(period: PeriodRange): Promise<DamPayload[]> {
-  const dams = await prisma.dam.findMany({ orderBy: { id: "asc" } });
-
-  const result: DamPayload[] = [];
-  for (const d of dams) {
-    const obs = await prisma.observation.findMany({
-      where: {
-        damId: d.id,
-        source: "kawabou",
-        observedAt: { gte: period.from, lte: period.to },
-      },
-      orderBy: { observedAt: "asc" },
-      select: {
-        observedAt: true,
-        storLvl: true,
-        allSink: true,
-        allDisch: true,
-      },
-    });
-    const reports = await prisma.dailyReport.findMany({
-      where: { damId: d.id },
-      orderBy: { reportDate: "desc" },
-      take: 30,
-      select: { reportDate: true, storCap: true, storPcntIrr: true },
-    });
-
-    const primaryLink = await prisma.damWeatherStation.findFirst({
-      where: { damId: d.id },
-      orderBy: { priority: "asc" },
-      include: { station: true },
-    });
-
-    let weather: WeatherStationInfo | null = null;
-    let weatherPoints: WeatherPoint[] = [];
-    if (primaryLink) {
-      const weatherRows = await prisma.weather.findMany({
-        where: {
-          stationCode: primaryLink.stationCode,
-          observedDate: { gte: period.from, lte: period.to },
-        },
-        orderBy: { observedDate: "asc" },
-        select: {
-          observedDate: true,
-          precipitation: true,
-          temperatureAvg: true,
-          temperatureMax: true,
-          temperatureMin: true,
-        },
-      });
-      weatherPoints = weatherRows.map((w) => ({
-        observedDate: w.observedDate.toISOString().slice(0, 10),
-        precipitation: w.precipitation,
-        temperatureAvg: w.temperatureAvg,
-        temperatureMax: w.temperatureMax,
-        temperatureMin: w.temperatureMin,
-      }));
-      weather = {
-        code: primaryLink.station.code,
-        name: primaryLink.station.name,
-        label: primaryLink.label,
-        points: weatherPoints,
-      };
-    }
-
-    const observations = obs.map((o) => ({
-      observedAt: o.observedAt.toISOString(),
-      storLvl: o.storLvl,
-      allSink: o.allSink,
-      allDisch: o.allDisch,
-    }));
-
-    const daily = aggregateDaily(observations, weatherPoints);
-    const stats = calcStats(daily, period.from, period.to);
-
-    result.push({
-      dam: {
-        id: d.id,
-        code: d.code,
-        name: d.name,
-        river: d.river,
-        address: d.address,
-        totalCapacity: d.totalCapacity,
-        nrmlHighStg: d.nrmlHighStg,
-      },
-      observations,
-      dailyReports: reports
-        .map((r) => ({
-          reportDate: r.reportDate.toISOString().slice(0, 10),
-          storCap: r.storCap,
-          storPcntIrr: r.storPcntIrr,
-        }))
-        .reverse(),
-      weather,
-      daily,
-      stats,
-    });
-  }
-  return result;
+  const dams = await prisma.dam.findMany({
+    orderBy: { id: "asc" },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      river: true,
+      address: true,
+      totalCapacity: true,
+      nrmlHighStg: true,
+    },
+  });
+  const resolution = selectResolution(period.from, period.to);
+  return Promise.all(dams.map((d) => buildDamPayload(d, period.from, period.to, resolution)));
 }
