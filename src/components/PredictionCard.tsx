@@ -1,4 +1,5 @@
 import type { PredictionInfo } from "@/lib/dam-data";
+import { fmtShortDateTime } from "@/lib/jst";
 
 type Props = { prediction: PredictionInfo; baseStorPcnt: number };
 
@@ -28,14 +29,13 @@ function daysLabel(days: number | null): string {
 export function PredictionCard({ prediction, baseStorPcnt }: Props) {
   const det = prediction.deterministic;
   const llms = prediction.llms;
-  const generatedAt = new Date(prediction.generatedAt);
-  const generatedLabel = `${generatedAt.getMonth() + 1}/${generatedAt.getDate()} ${String(generatedAt.getHours()).padStart(2, "0")}:${String(generatedAt.getMinutes()).padStart(2, "0")}`;
+  const generatedLabel = fmtShortDateTime(prediction.generatedAt);
 
   return (
     <div className="mt-6 border border-purple-100 bg-purple-50/30 rounded-lg p-4">
       <div className="flex items-baseline justify-between mb-3">
         <h3 className="text-sm font-semibold text-purple-900">📡 予測 (実験中)</h3>
-        <span className="text-xs text-gray-500">生成: {generatedLabel} / 基準貯水率 {baseStorPcnt.toFixed(1)}%</span>
+        <span className="text-xs text-gray-500">生成: {generatedLabel} JST / 基準貯水率 {baseStorPcnt.toFixed(1)}%</span>
       </div>
 
       {/* 決定論的 3 シナリオ */}

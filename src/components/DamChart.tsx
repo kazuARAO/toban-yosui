@@ -15,6 +15,7 @@ import type {
   ObservationPoint,
   WeatherStationInfo,
 } from "@/lib/dam-data";
+import { fmtShortDateTime, fmtIsoDate } from "@/lib/jst";
 
 type Props = {
   data: ObservationPoint[];
@@ -32,14 +33,12 @@ type ChartPoint = {
 };
 
 function formatTick(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return fmtShortDateTime(iso);
 }
 
 function jstDate(iso: string): string {
   // YYYY-MM-DD in JST
-  const d = new Date(iso);
-  return new Date(d.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return fmtIsoDate(iso);
 }
 
 function mergeWeather(
