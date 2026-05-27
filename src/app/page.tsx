@@ -6,8 +6,9 @@ import { DailyReportTable } from "@/components/DailyReportTable";
 import { PeriodSelector } from "@/components/PeriodSelector";
 import { RangeStatsCard } from "@/components/RangeStats";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+// データは 10 分粒度で更新されるので、60 秒キャッシュで十分。
+// 同じ URL (period+from+to) なら最大 60 秒は CDN/フルルートキャッシュから即返す。
+export const revalidate = 60;
 
 type SearchParams = Promise<Record<string, string | undefined>>;
 
