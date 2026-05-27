@@ -64,30 +64,32 @@ function mergeWeather(
   obs: ObservationPoint[],
   weather: WeatherStationInfo | null,
 ): ChartPoint[] {
-  const points: ChartPoint[] = obs.map((o) => ({
-    observedAt: o.observedAt,
-    storLvl: o.storLvl,
-    allSink: o.allSink,
-    allDisch: o.allDisch,
-    precipitation: null,
-  }));
+  // 観測ポイントを Map にして、同じ時刻に降水量を「上書きマージ」する。
+  // これで storLvl/allSink/allDisch の線が降水量行で分断されない。
+  const map = new Map<string, ChartPoint>();
+  for (const o of obs) {
+    map.set(o.observedAt, {
+      observedAt: o.observedAt,
+      storLvl: o.storLvl,
+      allSink: o.allSink,
+      allDisch: o.allDisch,
+      precipitation: null,
+    });
+  }
   if (weather) {
-    if (weather.series && weather.series.length > 0) {
-      // 10 分粒度を時間集計して描画密度を下げる
-      for (const w of aggregateHourly(weather.series)) {
-        points.push({
+    const wpoints = weather.series && weather.series.length > 0
+      ? aggregateHourly(weather.series)
+      : weather.points.map((w) => ({
+          observedAt: new Date(`${w.observedDate}T12:00:00+09:00`).toISOString(),
+          precipitation: w.precipitation ?? 0,
+        }));
+    for (const w of wpoints) {
+      const existing = map.get(w.observedAt);
+      if (existing) {
+        existing.precipitation = w.precipitation;
+      } else {
+        map.set(w.observedAt, {
           observedAt: w.observedAt,
-          storLvl: null,
-          allSink: null,
-          allDisch: null,
-          precipitation: w.precipitation,
-        });
-      }
-    } else {
-      for (const w of weather.points) {
-        const ts = new Date(`${w.observedDate}T12:00:00+09:00`).toISOString();
-        points.push({
-          observedAt: ts,
           storLvl: null,
           allSink: null,
           allDisch: null,
@@ -96,7 +98,9 @@ function mergeWeather(
       }
     }
   }
-  return points.sort((a, b) => a.observedAt.localeCompare(b.observedAt));
+  return [...map.values()].sort((a, b) =>
+    a.observedAt.localeCompare(b.observedAt),
+  );
 }
 
 type CustomTooltipExtra = {
