@@ -41,7 +41,14 @@ export function PredictionCard({ prediction, baseStorPcnt }: Props) {
       {/* 決定論的 3 シナリオ */}
       {det && (
         <div className="mb-4">
-          <div className="text-xs text-gray-600 mb-2">決定論的 3 シナリオ (簡易物理モデル)</div>
+          <div className="text-xs text-gray-600 mb-1">決定論的 3 シナリオ (簡易物理モデル)</div>
+          <div className="text-xs text-gray-500 mb-2 leading-relaxed">
+            <strong>7 日後・30 日後の貯水率 (%)</strong> を、過去の減少率 + 気象庁週間予報 +
+            流域面積から計算で推定。シナリオは仮定の差:
+            <span className="ml-1">🟢 楽観 = 予報雨量 ×1.3 / 減少率 ×0.7</span>
+            <span className="ml-1">🟡 標準 = 予報通り / 現状ペース</span>
+            <span className="ml-1">🔴 悲観 = 予報雨量 ×0.7 / 減少率 ×1.4</span>
+          </div>
           <div className="grid grid-cols-3 gap-2 text-sm">
             <div className="bg-white border border-emerald-100 rounded p-2">
               <div className="text-xs text-emerald-700">🟢 楽観</div>
@@ -87,8 +94,22 @@ export function PredictionCard({ prediction, baseStorPcnt }: Props) {
                   ) : (
                     <>
                       <div className="flex gap-3 mb-2 tabular-nums text-xs">
-                        <div>7d: <span className="font-semibold text-base">{fmt(llm.predicted7d)}</span></div>
-                        <div>30d: <span className="font-semibold text-base">{fmt(llm.predicted30d)}</span></div>
+                        <div>
+                          7d: <span className="font-semibold text-base">{fmt(llm.predicted7d)}</span>
+                          {llm.actual7d !== null && (
+                            <span className="ml-1 text-gray-500">
+                              (実測 {fmt(llm.actual7d)})
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          30d: <span className="font-semibold text-base">{fmt(llm.predicted30d)}</span>
+                          {llm.actual30d !== null && (
+                            <span className="ml-1 text-gray-500">
+                              (実測 {fmt(llm.actual30d)})
+                            </span>
+                          )}
+                        </div>
                       </div>
                       {llm.reasoning && (
                         <div className="text-xs text-gray-700 leading-relaxed">{llm.reasoning}</div>

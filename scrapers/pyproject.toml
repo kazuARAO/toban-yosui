@@ -25,6 +25,7 @@ toban-weather = "toban_scraper.weather:main"
 toban-weather-stations = "toban_scraper.weather_stations:main"
 toban-jma-forecast = "toban_scraper.jma_forecast:main"
 toban-predict = "toban_scraper.predict:main"
+toban-predict-accuracy = "toban_scraper.predict_accuracy:main"
 
 [build-system]
 requires = ["uv_build>=0.8.13,<0.9.0"]

@@ -37,3 +37,5 @@ jobs:
         run: uv run python -m toban_scraper.jma_forecast
       - name: Run prediction (deterministic + 3 LLMs)
         run: uv run python -m toban_scraper.predict
+      - name: Evaluate past predictions vs actuals
+        run: uv run python -m toban_scraper.predict_accuracy
