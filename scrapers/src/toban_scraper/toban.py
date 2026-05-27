@@ -17,6 +17,7 @@ from .db import connect
 
 
 TOPICS_URL = "http://toban-yosui.jp/cgi-bin/bbs/update.cgi?dir=topics"
+TOPICS_PAGE_URL = "http://toban-yosui.jp/cgi-bin/bbs/update.cgi?dir=topics&page={page}"
 
 # 「ダム貯水状況   2026/5/26」のような見出し（半角・全角の空白混在に対応）
 HEADING_DATE_RE = re.compile(
@@ -47,11 +48,18 @@ def _ua() -> str:
     )
 
 
-def fetch_topics_html() -> str:
-    resp = requests.get(TOPICS_URL, headers={"User-Agent": _ua()}, timeout=30)
+def fetch_topics_html(page: int | None = None) -> str:
+    """page=None で最新ページ、page=1,2,... で古いページ。"""
+    url = TOPICS_URL if page is None else TOPICS_PAGE_URL.format(page=page)
+    resp = requests.get(url, headers={"User-Agent": _ua()}, timeout=30)
     resp.encoding = "shift_jis"
     resp.raise_for_status()
     return resp.text
+
+
+def has_next_page(html: str) -> bool:
+    """「次へ」リンクがあるか（過去ページが残っているか）を判定。"""
+    return "次へ</a>" in html
 
 
 def parse_reports(html: str) -> list[ReportEntry]:
@@ -141,9 +149,36 @@ def run() -> int:
     return save(entries)
 
 
+def backfill(max_pages: int = 50) -> int:
+    """ページ 1 から順に max_pages まで遡り、ダム貯水状況だけ抽出して DailyReport に保存。"""
+    import time
+    total = 0
+    for page in range(1, max_pages + 1):
+        try:
+            html = fetch_topics_html(page=page)
+        except Exception as e:
+            print(f"  page={page}: fetch error {e}")
+            break
+        entries = parse_reports(html)
+        n = save(entries) if entries else 0
+        print(f"  page={page}: {len(entries)} dam-status entries, saved {n}")
+        total += n
+        if not has_next_page(html):
+            print(f"  page={page}: 「次へ」が無いのでバックフィル終了")
+            break
+        # 相手サーバ負荷軽減
+        time.sleep(0.5)
+    return total
+
+
 def main() -> None:
     n = run()
     print(f"Saved {n} daily reports.")
+
+
+def main_backfill() -> None:
+    n = backfill()
+    print(f"Backfilled {n} daily reports.")
 
 
 if __name__ == "__main__":

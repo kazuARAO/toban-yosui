@@ -57,6 +57,14 @@ export type DailyAggregate = {
   temperatureAvg: number | null;
   temperatureMax: number | null;
   temperatureMin: number | null;
+  // 日次平均流入・放流（m³/s）
+  inflowAvg: number | null;
+  dischargeAvg: number | null;
+  // 当日の貯水量 (千m³)
+  storCap: number | null;
+  // 実質取水量 (m³/s): 流入 - 放流 - 貯水量変化/日
+  //   負値は逆に「正味で蓄積された」ことを意味する（雨で増えた場合など）
+  netWithdrawal: number | null;
 };
 
 export type RangeStats = {
@@ -72,6 +80,10 @@ export type RangeStats = {
   storLvlStart: number | null;
   storLvlEnd: number | null;
   storLvlDelta: number | null;
+  // 期間中の平均実質取水量 (m³/s)
+  avgNetWithdrawal: number | null;
+  // 期間中の実質取水量合計 (m³)
+  totalNetWithdrawal: number | null;
 };
 
 export type ResolutionInfo = {
@@ -261,30 +273,66 @@ async function fetchObservations(
 function aggregateDaily(
   obs: ObservationPoint[],
   weather: WeatherPoint[],
+  dailyReports: { reportDate: string; storCap: number | null }[],
 ): DailyAggregate[] {
-  const buckets = new Map<string, number[]>();
+  type Bucket = { lvls: number[]; ins: number[]; outs: number[] };
+  const buckets = new Map<string, Bucket>();
   for (const o of obs) {
-    if (o.storLvl === null) continue;
     const date = jstYmd(new Date(o.observedAt));
-    if (!buckets.has(date)) buckets.set(date, []);
-    buckets.get(date)!.push(o.storLvl);
+    if (!buckets.has(date)) buckets.set(date, { lvls: [], ins: [], outs: [] });
+    const b = buckets.get(date)!;
+    if (o.storLvl !== null) b.lvls.push(o.storLvl);
+    if (o.allSink !== null) b.ins.push(o.allSink);
+    if (o.allDisch !== null) b.outs.push(o.allDisch);
   }
   const weatherByDate = new Map<string, WeatherPoint>();
   for (const w of weather) weatherByDate.set(w.observedDate, w);
+  const storCapByDate = new Map<string, number>();
+  for (const r of dailyReports) {
+    if (r.storCap !== null) storCapByDate.set(r.reportDate, r.storCap);
+  }
 
-  const dates = new Set<string>([...buckets.keys(), ...weatherByDate.keys()]);
+  const dates = new Set<string>([
+    ...buckets.keys(),
+    ...weatherByDate.keys(),
+    ...storCapByDate.keys(),
+  ]);
+  const sortedDates = [...dates].sort();
   const out: DailyAggregate[] = [];
-  for (const date of [...dates].sort()) {
-    const lvls = buckets.get(date);
+  for (let i = 0; i < sortedDates.length; i++) {
+    const date = sortedDates[i];
+    const b = buckets.get(date);
     const w = weatherByDate.get(date);
+    const storCap = storCapByDate.get(date) ?? null;
+
     let avg: number | null = null;
     let min: number | null = null;
     let max: number | null = null;
-    if (lvls && lvls.length > 0) {
-      avg = lvls.reduce((a, b) => a + b, 0) / lvls.length;
-      min = Math.min(...lvls);
-      max = Math.max(...lvls);
+    if (b && b.lvls.length > 0) {
+      avg = b.lvls.reduce((a, b) => a + b, 0) / b.lvls.length;
+      min = Math.min(...b.lvls);
+      max = Math.max(...b.lvls);
     }
+    const inflowAvg = b && b.ins.length > 0
+      ? b.ins.reduce((a, b) => a + b, 0) / b.ins.length
+      : null;
+    const dischargeAvg = b && b.outs.length > 0
+      ? b.outs.reduce((a, b) => a + b, 0) / b.outs.length
+      : null;
+
+    // 実質取水量 = 流入 - 放流 - (今日の貯水量 - 昨日の貯水量) / 86400 * 1000
+    // 貯水量変化が負（減）なら -(-x) = +x で取水側に寄与
+    let netWithdrawal: number | null = null;
+    const prevDate = sortedDates[i - 1];
+    const prevStorCap = prevDate ? (storCapByDate.get(prevDate) ?? null) : null;
+    if (
+      storCap !== null && prevStorCap !== null &&
+      inflowAvg !== null && dischargeAvg !== null
+    ) {
+      const dStorageM3PerSec = (storCap - prevStorCap) * 1000 / 86400;
+      netWithdrawal = inflowAvg - dischargeAvg - dStorageM3PerSec;
+    }
+
     out.push({
       date,
       storLvlAvg: avg,
@@ -294,6 +342,10 @@ function aggregateDaily(
       temperatureAvg: w?.temperatureAvg ?? null,
       temperatureMax: w?.temperatureMax ?? null,
       temperatureMin: w?.temperatureMin ?? null,
+      inflowAvg,
+      dischargeAvg,
+      storCap,
+      netWithdrawal,
     });
   }
   return out;
@@ -309,6 +361,8 @@ function calcStats(daily: DailyAggregate[], from: Date, to: Date): RangeStats {
   let maxTempDate: string | null = null;
   let storLvlStart: number | null = null;
   let storLvlEnd: number | null = null;
+
+  const withdrawals: number[] = [];
 
   for (const d of daily) {
     if (d.precipitation !== null) {
@@ -328,7 +382,15 @@ function calcStats(daily: DailyAggregate[], from: Date, to: Date): RangeStats {
       if (storLvlStart === null) storLvlStart = d.storLvlAvg;
       storLvlEnd = d.storLvlAvg;
     }
+    if (d.netWithdrawal !== null) withdrawals.push(d.netWithdrawal);
   }
+
+  const avgWithdrawal = withdrawals.length
+    ? withdrawals.reduce((a, b) => a + b, 0) / withdrawals.length
+    : null;
+  const totalWithdrawal = avgWithdrawal !== null
+    ? avgWithdrawal * 86400 * withdrawals.length
+    : null;
 
   return {
     fromDate: ymd(from),
@@ -349,6 +411,8 @@ function calcStats(daily: DailyAggregate[], from: Date, to: Date): RangeStats {
       storLvlStart !== null && storLvlEnd !== null
         ? Math.round((storLvlEnd - storLvlStart) * 100) / 100
         : null,
+    avgNetWithdrawal: avgWithdrawal,
+    totalNetWithdrawal: totalWithdrawal,
   };
 }
 
@@ -426,7 +490,11 @@ async function buildDamPayload(
     };
   }
 
-  const daily = aggregateDaily(observations, weatherPoints);
+  const dailyReportsForCalc = reports.map((r) => ({
+    reportDate: r.reportDate.toISOString().slice(0, 10),
+    storCap: r.storCap,
+  }));
+  const daily = aggregateDaily(observations, weatherPoints, dailyReportsForCalc);
   const stats = calcStats(daily, from, to);
 
   let prediction: PredictionInfo | null = null;

@@ -40,6 +40,13 @@ export function RangeStatsCard({ stats, rangeLabel }: Props) {
           ? `${stats.storLvlDelta > 0 ? "+" : ""}${stats.storLvlDelta.toFixed(2)} m`
           : "-",
     },
+    {
+      label: "実質取水量 (推定平均)",
+      value:
+        stats.avgNetWithdrawal !== null
+          ? `${stats.avgNetWithdrawal.toFixed(2)} m³/s`
+          : "- (要日次貯水量データ)",
+    },
   ];
 
   return (
