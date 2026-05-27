@@ -170,14 +170,10 @@ export function DamChart({ data, weather, damName, fullLvl }: Props) {
   const seriesPrecipValues = weather?.series
     .map((w) => w.precipitation)
     .filter((v): v is number => v !== null) ?? [];
-  const dailyPrecipValues = weather?.points
-    .map((w) => w.precipitation)
-    .filter((v): v is number => v !== null) ?? [];
-  const precipMax = Math.max(
-    10,
-    ...seriesPrecipValues,
-    // 10 分粒度では値が小さくなるので、最低 10mm くらいを軸として確保
-  );
+  // 雨量バーが画面の上 1/4 程度に収まるように、実データ最大値の 4 倍を Y 軸スケールに。
+  // これで貯水位ライン (中段以下) と被らない。
+  const actualPrecipMax = Math.max(5, ...seriesPrecipValues);
+  const precipMax = actualPrecipMax * 4;
 
   const precipByDate = new Map<string, number | null>();
   const tempByDate = new Map<
