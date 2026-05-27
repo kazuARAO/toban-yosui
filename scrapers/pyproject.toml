@@ -1,0 +1,25 @@
+[project]
+name = "toban-scraper"
+version = "0.1.0"
+description = "東播用水ダム水位スクレイパー (kawabou JSON / toban-yosui.jp / JMA AMeDAS)"
+authors = [
+    { name = "Kazuhiro ARAO", email = "kazuhiro.arao@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "lxml>=6.1.1",
+    "psycopg[binary]>=3.3.4",
+    "python-dotenv>=1.2.2",
+    "requests>=2.34.2",
+]
+
+[project.scripts]
+toban-seed = "toban_scraper.seed:main"
+toban-kawabou = "toban_scraper.kawabou:main"
+toban-toban = "toban_scraper.toban:main"
+toban-weather = "toban_scraper.weather:main"
+
+[build-system]
+requires = ["uv_build>=0.8.13,<0.9.0"]
+build-backend = "uv_build"

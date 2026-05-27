@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Dam {
+  id                Int      @id @default(autoincrement())
+  code              String   @unique
+  name              String
+  nameKana          String?
+  riverSystem       String?
+  river             String?
+  address           String?
+  lat               Float
+  lon               Float
+  nrmlHighStg       Float?
+  dsgnFldLv         Float?
+  totalCapacity     Float?
+  effectiveCapacity Float?
+  basinArea         Float?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  observations Observation[]
+  dailyReports DailyReport[]
+}
+
+model Observation {
+  id          BigInt   @id @default(autoincrement())
+  damId       Int
+  dam         Dam      @relation(fields: [damId], references: [id])
+  observedAt  DateTime
+  source      String   @default("kawabou")
+
+  storLvl     Float?
+  allSink     Float?
+  allDisch    Float?
+
+  storCap     Float?
+  storPcntIrr Float?
+  storPcntEff Float?
+
+  rawJson     Json?
+  createdAt   DateTime @default(now())
+
+  @@unique([damId, observedAt, source])
+  @@index([damId, observedAt])
+}
+
+model DailyReport {
+  id          Int      @id @default(autoincrement())
+  damId       Int
+  dam         Dam      @relation(fields: [damId], references: [id])
+  reportDate  DateTime @db.Date
+  storCap     Float?
+  storPcntIrr Float?
+  sourceUrl   String?
+  rawHtml     String?
+  createdAt   DateTime @default(now())
+
+  @@unique([damId, reportDate])
+}
+
+model Weather {
+  id             Int      @id @default(autoincrement())
+  station        String
+  observedDate   DateTime @db.Date
+  precipitation  Float?
+  temperatureAvg Float?
+  temperatureMax Float?
+  temperatureMin Float?
+  createdAt      DateTime @default(now())
+
+  @@unique([station, observedDate])
+}
+
+model LineSubscriber {
+  id             Int      @id @default(autoincrement())
+  lineUserId     String   @unique
+  displayName    String?
+  thresholdPcnt  Float    @default(35.0)
+  weeklyDropPcnt Float    @default(10.0)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  notifications NotificationLog[]
+}
+
+model NotificationLog {
+  id           Int            @id @default(autoincrement())
+  subscriberId Int
+  subscriber   LineSubscriber @relation(fields: [subscriberId], references: [id])
+  damId        Int?
+  trigger      String
+  message      String
+  sentAt       DateTime       @default(now())
+
+  @@index([subscriberId, sentAt])
+}

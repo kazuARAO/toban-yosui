@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: toban-yosui-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: toban
+      POSTGRES_PASSWORD: toban
+      POSTGRES_DB: toban_yosui
+      TZ: Asia/Tokyo
+    ports:
+      - "5444:5432"
+    volumes:
+      - toban-yosui-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U toban -d toban_yosui"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  toban-yosui-pgdata:
