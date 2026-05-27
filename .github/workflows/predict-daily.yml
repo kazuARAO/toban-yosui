@@ -1,0 +1,39 @@
+name: predict-daily
+
+# 毎日 10:30 JST (= 1:30 UTC) に予測を実行。
+# toban scraper (0:30 UTC) で日次貯水率が更新された後、weather (1:00 UTC) で前日気象が
+# 蓄積された後の絶妙なタイミング。
+
+on:
+  schedule:
+    - cron: "30 1 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: predict-daily
+  cancel-in-progress: false
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: scrapers
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      SCRAPER_USER_AGENT: "toban-yosui-watcher/0.1 (+https://github.com/kazuARAO/toban-yosui)"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "scrapers/uv.lock"
+      - run: uv sync --frozen
+      - name: Fetch JMA weekly forecast
+        run: uv run python -m toban_scraper.jma_forecast
+      - name: Run prediction (deterministic + 3 LLMs)
+        run: uv run python -m toban_scraper.predict

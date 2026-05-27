@@ -29,6 +29,7 @@ model Dam {
   observations    Observation[]
   dailyReports    DailyReport[]
   weatherStations DamWeatherStation[]
+  predictionRuns  PredictionRun[]
 }
 
 model WeatherStation {
@@ -132,4 +133,98 @@ model NotificationLog {
   sentAt       DateTime       @default(now())
 
   @@index([subscriberId, sentAt])
+}
+
+// 気象庁週間予報のスナップショット（予測の根拠を後から検証可能にするため）
+model JmaForecast {
+  id             Int      @id @default(autoincrement())
+  fetchedAt      DateTime @default(now())
+  areaCode       String   // 兵庫県南部 = "280010"
+  targetDate     DateTime @db.Date
+  precipitation  Float?   // 予報降水量 (mm/日)
+  precipProb     Float?   // 降水確率 (%)
+  tempMax        Float?
+  tempMin        Float?
+  weatherText    String?  // 例: "曇り時々晴れ"
+  rawJson        Json?
+
+  @@unique([areaCode, targetDate, fetchedAt])
+  @@index([areaCode, targetDate])
+}
+
+// 1 回の予測実行（ダム x 日次）
+model PredictionRun {
+  id               Int      @id @default(autoincrement())
+  damId            Int
+  dam              Dam      @relation(fields: [damId], references: [id])
+  generatedAt      DateTime @default(now())
+
+  // 基準値スナップショット
+  baseStorPcnt     Float    // 予測時点の貯水率
+  baseStorLvl      Float?   // 予測時点の貯水位
+  baseObservedAt   DateTime // 基準データの観測時刻
+
+  // 入力コンテキスト snapshot (LLM に渡したものと同じ)
+  recentDays       Int      // 何日分のデータを材料にしたか
+  recentDropRate   Float?   // 過去 N 日の平均減少率 (pt/日)
+  contextJson      Json?    // 完全コンテキスト (再現性のため)
+
+  deterministic    DeterministicForecast?
+  llmForecasts     LLMForecast[]
+
+  @@index([damId, generatedAt])
+}
+
+// 決定論的 3 シナリオ予測
+model DeterministicForecast {
+  id              Int           @id @default(autoincrement())
+  runId           Int           @unique
+  run             PredictionRun @relation(fields: [runId], references: [id])
+
+  // 7 日後 (3 シナリオ)
+  optimistic7d    Float?
+  standard7d      Float?
+  pessimistic7d   Float?
+  // 30 日後 (3 シナリオ)
+  optimistic30d   Float?
+  standard30d     Float?
+  pessimistic30d  Float?
+  // 取水制限 (30%) 到達予測日数 (標準シナリオ)
+  daysTo30pct     Int?
+
+  // 実測値 (バックフィルジョブが後から記入)
+  actual7d        Float?
+  actual30d       Float?
+  evaluatedAt     DateTime?
+}
+
+// 各 LLM の独立予測
+model LLMForecast {
+  id              Int           @id @default(autoincrement())
+  runId           Int
+  run             PredictionRun @relation(fields: [runId], references: [id])
+
+  provider        String        // 'claude' | 'openai' | 'gemini'
+  model           String        // 'claude-opus-4-7' | 'gpt-5.5' | 'gemini-3.1-pro-preview'
+
+  predicted7d     Float?
+  predicted30d    Float?
+  warningLevel    String?       // 'low' | 'mid' | 'high'
+  reasoning       String?       // LLM のコメント本文
+
+  promptInput     Json?
+  rawResponse     String?       // 完全レスポンス (監査用)
+  generationMs    Int?
+  errorMessage    String?
+
+  // 実測値 (バックフィル)
+  actual7d        Float?
+  actual30d       Float?
+  error7d         Float?
+  error30d        Float?
+  evaluatedAt     DateTime?
+
+  generatedAt     DateTime      @default(now())
+
+  @@index([runId, provider])
 }

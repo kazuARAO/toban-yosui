@@ -5,6 +5,7 @@ import { DailySummaryChartClient } from "@/components/DailySummaryChartClient";
 import { DailyReportTable } from "@/components/DailyReportTable";
 import { PeriodSelector } from "@/components/PeriodSelector";
 import { RangeStatsCard } from "@/components/RangeStats";
+import { PredictionCard } from "@/components/PredictionCard";
 
 // データは 10 分粒度で更新されるので、60 秒キャッシュで十分。
 // 同じ URL (period+from+to) なら最大 60 秒は CDN/フルルートキャッシュから即返す。
@@ -42,7 +43,7 @@ export default async function Home({
       </section>
 
       <div className="grid gap-8 lg:grid-cols-1">
-        {payloads.map(({ dam, observations, resolution, dailyReports, weather, daily, stats }) => {
+        {payloads.map(({ dam, observations, resolution, dailyReports, weather, daily, stats, prediction }) => {
           const obs = latestObs(observations);
           const rep = latestReport(dailyReports);
           return (
@@ -119,6 +120,13 @@ export default async function Home({
               />
 
               <RangeStatsCard stats={stats} rangeLabel={period.label} />
+
+              {prediction && (
+                <PredictionCard
+                  prediction={prediction}
+                  baseStorPcnt={prediction.baseStorPcnt}
+                />
+              )}
 
               <details className="mt-4">
                 <summary className="text-sm text-gray-600 cursor-pointer">

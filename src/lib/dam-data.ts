@@ -73,6 +73,39 @@ export type ResolutionInfo = {
   bucketSize: number;   // 単位を何個まとめるか (10分 = unit "minute" + size 10)
 };
 
+export type PredictionScenarios = {
+  optimistic7d: number | null;
+  standard7d: number | null;
+  pessimistic7d: number | null;
+  optimistic30d: number | null;
+  standard30d: number | null;
+  pessimistic30d: number | null;
+  daysTo30pct: number | null;
+  actual7d: number | null;
+  actual30d: number | null;
+};
+
+export type LLMForecastInfo = {
+  provider: string; // 'claude' | 'openai' | 'gemini'
+  model: string;
+  predicted7d: number | null;
+  predicted30d: number | null;
+  warningLevel: string | null;
+  reasoning: string | null;
+  error: string | null;
+  actual7d: number | null;
+  actual30d: number | null;
+};
+
+export type PredictionInfo = {
+  runId: number;
+  generatedAt: string;
+  baseStorPcnt: number;
+  baseObservedAt: string;
+  deterministic: PredictionScenarios | null;
+  llms: LLMForecastInfo[];
+};
+
 export type DamPayload = {
   dam: DamSummary;
   observations: ObservationPoint[];
@@ -81,6 +114,7 @@ export type DamPayload = {
   weather: WeatherStationInfo | null;
   daily: DailyAggregate[];
   stats: RangeStats;
+  prediction: PredictionInfo | null;
 };
 
 /** 期間長から表示用解像度を決定。点数を概ね 1,500 以下に保つ。 */
@@ -266,8 +300,8 @@ async function buildDamPayload(
   to: Date,
   resolution: ResolutionInfo,
 ): Promise<DamPayload> {
-  // 3 つを並列に
-  const [observations, reports, primaryLink] = await Promise.all([
+  // 4 つを並列に
+  const [observations, reports, primaryLink, latestPrediction] = await Promise.all([
     fetchObservations(dam.id, from, to, resolution),
     prisma.dailyReport.findMany({
       where: { damId: dam.id },
@@ -279,6 +313,14 @@ async function buildDamPayload(
       where: { damId: dam.id },
       orderBy: { priority: "asc" },
       include: { station: true },
+    }),
+    prisma.predictionRun.findFirst({
+      where: { damId: dam.id },
+      orderBy: { generatedAt: "desc" },
+      include: {
+        deterministic: true,
+        llmForecasts: { orderBy: { provider: "asc" } },
+      },
     }),
   ]);
 
@@ -317,6 +359,40 @@ async function buildDamPayload(
   const daily = aggregateDaily(observations, weatherPoints);
   const stats = calcStats(daily, from, to);
 
+  let prediction: PredictionInfo | null = null;
+  if (latestPrediction) {
+    prediction = {
+      runId: latestPrediction.id,
+      generatedAt: latestPrediction.generatedAt.toISOString(),
+      baseStorPcnt: latestPrediction.baseStorPcnt,
+      baseObservedAt: latestPrediction.baseObservedAt.toISOString(),
+      deterministic: latestPrediction.deterministic
+        ? {
+            optimistic7d: latestPrediction.deterministic.optimistic7d,
+            standard7d: latestPrediction.deterministic.standard7d,
+            pessimistic7d: latestPrediction.deterministic.pessimistic7d,
+            optimistic30d: latestPrediction.deterministic.optimistic30d,
+            standard30d: latestPrediction.deterministic.standard30d,
+            pessimistic30d: latestPrediction.deterministic.pessimistic30d,
+            daysTo30pct: latestPrediction.deterministic.daysTo30pct,
+            actual7d: latestPrediction.deterministic.actual7d,
+            actual30d: latestPrediction.deterministic.actual30d,
+          }
+        : null,
+      llms: latestPrediction.llmForecasts.map((f) => ({
+        provider: f.provider,
+        model: f.model,
+        predicted7d: f.predicted7d,
+        predicted30d: f.predicted30d,
+        warningLevel: f.warningLevel,
+        reasoning: f.reasoning,
+        error: f.errorMessage,
+        actual7d: f.actual7d,
+        actual30d: f.actual30d,
+      })),
+    };
+  }
+
   return {
     dam,
     observations,
@@ -331,6 +407,7 @@ async function buildDamPayload(
     weather,
     daily,
     stats,
+    prediction,
   };
 }
 
