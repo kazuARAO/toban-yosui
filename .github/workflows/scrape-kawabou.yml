@@ -1,0 +1,48 @@
+name: scrape-kawabou
+
+# 10 分毎に kawabou JSON を取得して DB に保存。
+# 注意: GitHub Actions の cron は実際には数分の遅延が発生することがある（ベストエフォート）。
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "実行モード (single = 直近のみ / backfill = 過去 N 日)"
+        type: choice
+        options: [single, backfill]
+        default: single
+      days:
+        description: "backfill 時の遡る日数"
+        type: string
+        default: "7"
+
+concurrency:
+  group: scrape-kawabou
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: scrapers
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SCRAPER_USER_AGENT: "toban-yosui-watcher/0.1 (+https://github.com/kazuARAO/toban-yosui)"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "scrapers/uv.lock"
+      - name: Sync deps
+        run: uv sync --frozen
+      - name: Scrape kawabou (single)
+        if: ${{ inputs.mode != 'backfill' }}
+        run: uv run python -m toban_scraper.kawabou
+      - name: Backfill kawabou
+        if: ${{ inputs.mode == 'backfill' }}
+        run: uv run python -m toban_scraper.backfill --days ${{ inputs.days }}

@@ -1,0 +1,31 @@
+name: scrape-weather
+
+# 気象庁アメダスの前日分日次データを取得。
+# 10:00 JST = 1:00 UTC に取得（前日分が確定している時間帯）。
+on:
+  schedule:
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: scrape-weather
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: scrapers
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SCRAPER_USER_AGENT: "toban-yosui-watcher/0.1 (+https://github.com/kazuARAO/toban-yosui)"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "scrapers/uv.lock"
+      - run: uv sync --frozen
+      - run: uv run python -m toban_scraper.weather

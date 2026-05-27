@@ -1,0 +1,31 @@
+name: scrape-toban
+
+# 土地改良区 toban-yosui.jp の日次「ダム貯水状況」を取得。
+# 公式発表は 9:00 JST なので、9:30 JST = 0:30 UTC に取得。
+on:
+  schedule:
+    - cron: "30 0 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: scrape-toban
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: scrapers
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SCRAPER_USER_AGENT: "toban-yosui-watcher/0.1 (+https://github.com/kazuARAO/toban-yosui)"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "scrapers/uv.lock"
+      - run: uv sync --frozen
+      - run: uv run python -m toban_scraper.toban
