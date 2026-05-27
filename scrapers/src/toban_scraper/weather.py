@@ -17,12 +17,27 @@ from .db import connect
 
 JST = timezone(timedelta(hours=9))
 
-# アメダス観測所コード（気象庁 bosai-amedas/const/amedastable.json から取得）
-STATIONS: dict[str, str] = {
-    "三木": "63461",
-    "神戸": "63518",
-    "三田": "63411",
-}
+def _load_stations_from_db() -> dict[str, str]:
+    """DamWeatherStation を介してダムに紐付いた WeatherStation を全部取得。
+
+    戻り値: {表示名: 観測所コード} の辞書（active=true のみ）。
+    """
+    from .db import connect
+
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT ws.name, ws.code
+            FROM "WeatherStation" ws
+            WHERE ws.active = true
+              AND EXISTS (
+                SELECT 1 FROM "DamWeatherStation" dws
+                WHERE dws."stationCode" = ws.code
+              )
+            ORDER BY ws.name
+            """
+        )
+        return {row[0]: row[1] for row in cur.fetchall()}
 
 # 日次データ JSON：年月日の hourly を集約する
 # https://www.jma.go.jp/bosai/amedas/data/point/{station}/{YYYYMMDD}_{HH}.json (3時間ごとファイル)
@@ -77,13 +92,13 @@ def fetch_daily(station_id: str, target: date) -> dict[str, float | None]:
 
 UPSERT_WEATHER_SQL = """
 INSERT INTO "Weather" (
-    station, "observedDate", precipitation,
+    "stationCode", "observedDate", precipitation,
     "temperatureAvg", "temperatureMax", "temperatureMin", "createdAt"
 ) VALUES (
-    %(station)s, %(observed_date)s, %(precipitation)s,
+    %(station_code)s, %(observed_date)s, %(precipitation)s,
     %(temperature_avg)s, %(temperature_max)s, %(temperature_min)s, NOW()
 )
-ON CONFLICT (station, "observedDate") DO UPDATE SET
+ON CONFLICT ("stationCode", "observedDate") DO UPDATE SET
     precipitation = EXCLUDED.precipitation,
     "temperatureAvg" = EXCLUDED."temperatureAvg",
     "temperatureMax" = EXCLUDED."temperatureMax",
@@ -92,26 +107,32 @@ ON CONFLICT (station, "observedDate") DO UPDATE SET
 
 
 def run(target: date | None = None) -> int:
-    """指定日（省略時は昨日）のデータを各観測所について保存。"""
+    """指定日（省略時は昨日）のデータを DB 上の全紐付け観測所について保存。"""
     if target is None:
         target = (datetime.now(JST) - timedelta(days=1)).date()
+
+    stations = _load_stations_from_db()
+    if not stations:
+        print("No weather stations linked to any dam. Run weather_stations.py first.")
+        return 0
 
     inserted = 0
     with connect() as conn:
         with conn.cursor() as cur:
-            for name, station_id in STATIONS.items():
-                summary = fetch_daily(station_id, target)
+            for name, station_code in stations.items():
+                summary = fetch_daily(station_code, target)
                 cur.execute(
                     UPSERT_WEATHER_SQL,
                     {
-                        "station": name,
+                        "station_code": station_code,
                         "observed_date": target,
                         **summary,
                     },
                 )
                 inserted += 1
                 print(
-                    f"  {target} {name}: rain={summary['precipitation']:.1f}mm "
+                    f"  {target} {name} ({station_code}): "
+                    f"rain={summary['precipitation']:.1f}mm "
                     f"tempAvg={summary['temperature_avg']}"
                 )
         conn.commit()

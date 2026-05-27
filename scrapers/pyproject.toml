@@ -19,6 +19,7 @@ toban-seed = "toban_scraper.seed:main"
 toban-kawabou = "toban_scraper.kawabou:main"
 toban-toban = "toban_scraper.toban:main"
 toban-weather = "toban_scraper.weather:main"
+toban-weather-stations = "toban_scraper.weather_stations:main"
 
 [build-system]
 requires = ["uv_build>=0.8.13,<0.9.0"]

@@ -24,7 +24,7 @@ export default async function Home() {
       </header>
 
       <div className="grid gap-8 lg:grid-cols-1">
-        {payloads.map(({ dam, observations, dailyReports }) => {
+        {payloads.map(({ dam, observations, dailyReports, weather }) => {
           const obs = latestObs(observations);
           const rep = latestReport(dailyReports);
           return (
@@ -80,9 +80,16 @@ export default async function Home() {
               <div className="mb-2 text-sm font-medium">過去 7 日間 (10分毎)</div>
               <DamChartClient
                 data={observations}
+                weather={weather}
                 damName={dam.name}
                 fullLvl={dam.nrmlHighStg}
               />
+              {weather && (
+                <div className="mt-2 text-xs text-gray-500">
+                  天気観測所: {weather.name} ({weather.code})
+                  {weather.label && <span className="ml-1">— {weather.label}</span>}
+                </div>
+              )}
 
               <details className="mt-4">
                 <summary className="text-sm text-gray-600 cursor-pointer">

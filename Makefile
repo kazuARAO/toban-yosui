@@ -57,6 +57,9 @@ scrape-toban:
 scrape-weather:
 	cd scrapers && uv run python -m toban_scraper.weather
 
+weather-stations:
+	cd scrapers && uv run python -m toban_scraper.weather_stations
+
 lint:
 	pnpm lint
 
