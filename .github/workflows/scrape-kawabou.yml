@@ -5,7 +5,9 @@ name: scrape-kawabou
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    # 30 分毎。本家 publish 頻度 (10 分) より緩和して bot blocking を回避。
+    # GH Actions の cron は実際 60-90 分遅延しがちなので 10 分指定でも意味なし。
+    - cron: "*/30 * * * *"
   workflow_dispatch:
     inputs:
       mode:

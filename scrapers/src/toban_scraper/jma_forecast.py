@@ -27,7 +27,10 @@ HYOGO_AREA = "280000"
 
 
 def _ua() -> str:
-    return "toban-yosui-watcher/0.1 (+https://github.com/kazuARAO/toban-yosui)"
+    return (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+    )
 
 
 def fetch_forecast(area_code: str = HYOGO_AREA) -> list[dict[str, Any]]:

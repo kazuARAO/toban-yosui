@@ -28,14 +28,23 @@ INVALID_CCDS = {140, 160}
 
 
 def _ua() -> str:
+    # kawabou は識別可能な scraper UA を Akamai でブロックするため、
+    # 公開 SPA がブラウザから取得するのと同じ UA + Referer を使う。
+    # 本家サイトの publish 頻度 (10 分) より遅い間隔でアクセスする運用前提。
     return os.environ.get(
         "SCRAPER_USER_AGENT",
-        "toban-yosui-watcher/0.1 (+https://github.com/kazuARAO/toban-yosui)",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
     )
 
 
 def _get_json(url: str, timeout: int = 15) -> dict[str, Any] | None:
-    resp = requests.get(url, headers={"User-Agent": _ua()}, timeout=timeout)
+    headers = {
+        "User-Agent": _ua(),
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://www.river.go.jp/kawabou/pcfull/tm",
+    }
+    resp = requests.get(url, headers=headers, timeout=timeout)
     if resp.status_code == 404:
         return None
     resp.raise_for_status()
