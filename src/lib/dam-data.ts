@@ -34,11 +34,18 @@ export type WeatherPoint = {
   temperatureMin: number | null;
 };
 
+export type WeatherSeriesPoint = {
+  observedAt: string; // ISO 10 分粒度
+  precipitation: number | null; // mm/期間
+  temperature: number | null;
+};
+
 export type WeatherStationInfo = {
   code: string;
   name: string;
   label: string | null;
-  points: WeatherPoint[];
+  points: WeatherPoint[];      // 日次集計 (DailySummaryChart, RangeStats 用)
+  series: WeatherSeriesPoint[]; // 10 分粒度 (DamChart オーバーレイ用)
 };
 
 export type DailyAggregate = {
@@ -128,6 +135,65 @@ function selectResolution(from: Date, to: Date): ResolutionInfo {
 
 function jstYmd(d: Date): string {
   return new Date(d.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** 観測解像度に合わせて 10 分粒度の天気データを集約取得。 */
+async function fetchWeatherSeries(
+  stationCode: string,
+  from: Date,
+  to: Date,
+  resolution: ResolutionInfo,
+): Promise<WeatherSeriesPoint[]> {
+  // 10 分粒度のときは元データ
+  if (resolution.bucketUnit === "minute" && resolution.bucketSize === 10) {
+    const rows = await prisma.weatherObservation.findMany({
+      where: {
+        stationCode,
+        observedAt: { gte: from, lte: to },
+      },
+      orderBy: { observedAt: "asc" },
+      select: {
+        observedAt: true,
+        precipitation10m: true,
+        temperature: true,
+      },
+    });
+    return rows.map((r) => ({
+      observedAt: r.observedAt.toISOString(),
+      precipitation: r.precipitation10m,
+      temperature: r.temperature,
+    }));
+  }
+
+  // ラスター集約 (1h / 6h / 1d)
+  const truncExpr =
+    resolution.bucketUnit === "day"
+      ? Prisma.sql`date_trunc('day', "observedAt")`
+      : resolution.bucketSize === 1
+        ? Prisma.sql`date_trunc('hour', "observedAt")`
+        : Prisma.sql`date_trunc('hour', "observedAt") - (EXTRACT(hour FROM "observedAt")::int % ${resolution.bucketSize}) * INTERVAL '1 hour'`;
+
+  const rows = await prisma.$queryRaw<
+    Array<{ bucket: Date; precipitation: number | null; temperature: number | null }>
+  >(
+    Prisma.sql`
+      SELECT
+        ${truncExpr} AS bucket,
+        SUM("precipitation10m") AS precipitation,
+        AVG(temperature) AS temperature
+      FROM "WeatherObservation"
+      WHERE "stationCode" = ${stationCode}
+        AND "observedAt" >= ${from}
+        AND "observedAt" <= ${to}
+      GROUP BY bucket
+      ORDER BY bucket ASC
+    `,
+  );
+  return rows.map((r) => ({
+    observedAt: r.bucket.toISOString(),
+    precipitation: r.precipitation !== null ? Number(r.precipitation) : null,
+    temperature: r.temperature !== null ? Number(r.temperature) : null,
+  }));
 }
 
 /** Postgres 側で date_trunc + 集約して観測値を返す。 */
@@ -327,20 +393,23 @@ async function buildDamPayload(
   let weather: WeatherStationInfo | null = null;
   let weatherPoints: WeatherPoint[] = [];
   if (primaryLink) {
-    const weatherRows = await prisma.weather.findMany({
-      where: {
-        stationCode: primaryLink.stationCode,
-        observedDate: { gte: from, lte: to },
-      },
-      orderBy: { observedDate: "asc" },
-      select: {
-        observedDate: true,
-        precipitation: true,
-        temperatureAvg: true,
-        temperatureMax: true,
-        temperatureMin: true,
-      },
-    });
+    const [weatherRows, weatherSeriesRows] = await Promise.all([
+      prisma.weather.findMany({
+        where: {
+          stationCode: primaryLink.stationCode,
+          observedDate: { gte: from, lte: to },
+        },
+        orderBy: { observedDate: "asc" },
+        select: {
+          observedDate: true,
+          precipitation: true,
+          temperatureAvg: true,
+          temperatureMax: true,
+          temperatureMin: true,
+        },
+      }),
+      fetchWeatherSeries(primaryLink.stationCode, from, to, resolution),
+    ]);
     weatherPoints = weatherRows.map((w) => ({
       observedDate: w.observedDate.toISOString().slice(0, 10),
       precipitation: w.precipitation,
@@ -353,6 +422,7 @@ async function buildDamPayload(
       name: primaryLink.station.name,
       label: primaryLink.label,
       points: weatherPoints,
+      series: weatherSeriesRows,
     };
   }
 

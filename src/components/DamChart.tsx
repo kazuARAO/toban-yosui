@@ -53,15 +53,28 @@ function mergeWeather(
     precipitation: null,
   }));
   if (weather) {
-    for (const w of weather.points) {
-      const ts = new Date(`${w.observedDate}T12:00:00+09:00`).toISOString();
-      points.push({
-        observedAt: ts,
-        storLvl: null,
-        allSink: null,
-        allDisch: null,
-        precipitation: w.precipitation,
-      });
+    // 10 分粒度の series を優先、空なら旧 daily points にフォールバック
+    if (weather.series && weather.series.length > 0) {
+      for (const w of weather.series) {
+        points.push({
+          observedAt: w.observedAt,
+          storLvl: null,
+          allSink: null,
+          allDisch: null,
+          precipitation: w.precipitation,
+        });
+      }
+    } else {
+      for (const w of weather.points) {
+        const ts = new Date(`${w.observedDate}T12:00:00+09:00`).toISOString();
+        points.push({
+          observedAt: ts,
+          storLvl: null,
+          allSink: null,
+          allDisch: null,
+          precipitation: w.precipitation,
+        });
+      }
     }
   }
   return points.sort((a, b) => a.observedAt.localeCompare(b.observedAt));
@@ -154,11 +167,16 @@ export function DamChart({ data, weather, damName, fullLvl }: Props) {
   const yMin = Math.floor(minLvl - 0.5);
   const yMax = Math.ceil(Math.max(maxLvl, fullLvl ?? maxLvl) + 0.5);
 
+  const seriesPrecipValues = weather?.series
+    .map((w) => w.precipitation)
+    .filter((v): v is number => v !== null) ?? [];
+  const dailyPrecipValues = weather?.points
+    .map((w) => w.precipitation)
+    .filter((v): v is number => v !== null) ?? [];
   const precipMax = Math.max(
-    50,
-    ...(weather?.points
-      .map((w) => w.precipitation)
-      .filter((v): v is number => v !== null) ?? []),
+    10,
+    ...seriesPrecipValues,
+    // 10 分粒度では値が小さくなるので、最低 10mm くらいを軸として確保
   );
 
   const precipByDate = new Map<string, number | null>();
@@ -209,7 +227,7 @@ export function DamChart({ data, weather, damName, fullLvl }: Props) {
             axisLine={{ stroke: "#0ea5e9" }}
             tickLine={{ stroke: "#0ea5e9" }}
             width={36}
-            label={{ value: "雨量(mm/日)", angle: 90, position: "insideRight", offset: -34, style: { fontSize: 11, fill: "#0ea5e9" } }}
+            label={{ value: "雨量(mm)", angle: 90, position: "insideRight", offset: -34, style: { fontSize: 11, fill: "#0ea5e9" } }}
           />
           <Tooltip
             content={(p) => (

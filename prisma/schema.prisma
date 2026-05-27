@@ -45,8 +45,26 @@ model WeatherStation {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  weatherRecords Weather[]
-  damLinks       DamWeatherStation[]
+  weatherRecords     Weather[]
+  observations       WeatherObservation[]
+  damLinks           DamWeatherStation[]
+}
+
+// 10 分粒度の生気象データ (JMA アメダス由来)
+model WeatherObservation {
+  id              BigInt         @id @default(autoincrement())
+  stationCode     String
+  station         WeatherStation @relation(fields: [stationCode], references: [code])
+  observedAt      DateTime       // 観測時刻 (10 分粒度)
+  precipitation10m Float?        // 10 分降水量 (mm)
+  precipitation1h Float?         // 1 時間降水量 (mm)
+  temperature     Float?         // 気温 (℃)
+  humidity        Float?         // 湿度 (%)
+  rawJson         Json?
+  createdAt       DateTime       @default(now())
+
+  @@unique([stationCode, observedAt])
+  @@index([stationCode, observedAt])
 }
 
 model DamWeatherStation {
