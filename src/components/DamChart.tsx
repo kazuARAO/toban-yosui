@@ -36,6 +36,12 @@ function formatTick(iso: string): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+function jstDate(iso: string): string {
+  // YYYY-MM-DD in JST
+  const d = new Date(iso);
+  return new Date(d.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 function mergeWeather(
   obs: ObservationPoint[],
   weather: WeatherStationInfo | null,
@@ -49,7 +55,6 @@ function mergeWeather(
   }));
   if (weather) {
     for (const w of weather.points) {
-      // 各日の正午（JST 12:00）にバーを配置
       const ts = new Date(`${w.observedDate}T12:00:00+09:00`).toISOString();
       points.push({
         observedAt: ts,
@@ -61,6 +66,78 @@ function mergeWeather(
     }
   }
   return points.sort((a, b) => a.observedAt.localeCompare(b.observedAt));
+}
+
+type CustomTooltipExtra = {
+  precipByDate: Map<string, number | null>;
+  tempByDate: Map<string, { avg: number | null; max: number | null; min: number | null }>;
+  weatherStationName: string | null;
+};
+
+// Recharts の Tooltip content から渡る型は厳密に書くと噛み合わないので、必要なキーだけ unknown で受ける。
+type CustomTooltipProps = {
+  active?: boolean;
+  label?: string | number;
+  payload?: ReadonlyArray<unknown>;
+} & CustomTooltipExtra;
+
+function CustomTooltip(props: CustomTooltipProps) {
+  if (!props.active || props.label === undefined) return null;
+  const labelStr = String(props.label);
+  const time = formatTick(labelStr);
+  const date = jstDate(labelStr);
+  const precip = props.precipByDate.get(date);
+  const temp = props.tempByDate.get(date);
+
+  const items: { name: string; value: string; color?: string }[] = [];
+  for (const raw of props.payload ?? []) {
+    const p = raw as { name?: unknown; value?: unknown; color?: string; dataKey?: unknown };
+    if (typeof p.value === "number") {
+      const dk = typeof p.dataKey === "string" ? p.dataKey : "";
+      let unit = "";
+      if (dk === "storLvl") unit = " m";
+      else if (dk === "allSink" || dk === "allDisch") unit = " m³/s";
+      else if (dk === "precipitation") unit = " mm";
+      items.push({
+        name: String(p.name ?? dk),
+        value: `${p.value.toFixed(2)}${unit}`,
+        color: p.color,
+      });
+    }
+  }
+  // 観測点側 (10分粒度) で payload に precipitation が無いケースが多いので、別途日次値を補足
+  if (precip !== undefined && precip !== null && !items.some((i) => i.name.includes("降水量"))) {
+    items.push({
+      name: `当日降水量${props.weatherStationName ? ` (${props.weatherStationName})` : ""}`,
+      value: `${precip.toFixed(1)} mm`,
+      color: "#0891b2",
+    });
+  }
+
+  return (
+    <div className="bg-white border border-gray-200 rounded shadow-sm p-2 text-xs">
+      <div className="font-medium mb-1">{time}</div>
+      <ul className="space-y-0.5">
+        {items.map((it, i) => (
+          <li key={i} className="flex items-center gap-2">
+            {it.color && (
+              <span
+                className="inline-block w-2 h-2 rounded-sm"
+                style={{ background: it.color }}
+              />
+            )}
+            <span className="text-gray-600">{it.name}:</span>
+            <span className="font-semibold tabular-nums">{it.value}</span>
+          </li>
+        ))}
+        {temp && (temp.max !== null || temp.min !== null) && (
+          <li className="text-gray-500 mt-1 border-t pt-1">
+            気温: {temp.max?.toFixed(1) ?? "-"} ℃ / {temp.min?.toFixed(1) ?? "-"} ℃ (最高/最低)
+          </li>
+        )}
+      </ul>
+    </div>
+  );
 }
 
 export function DamChart({ data, weather, damName, fullLvl }: Props) {
@@ -79,11 +156,27 @@ export function DamChart({ data, weather, damName, fullLvl }: Props) {
   const yMax = Math.ceil(Math.max(maxLvl, fullLvl ?? maxLvl) + 0.5);
 
   const precipMax = Math.max(
-    50, // 最低でも 50mm/日まで表示（雨無しの日も棒スペース確保）
+    50,
     ...(weather?.points
       .map((w) => w.precipitation)
       .filter((v): v is number => v !== null) ?? []),
   );
+
+  const precipByDate = new Map<string, number | null>();
+  const tempByDate = new Map<
+    string,
+    { avg: number | null; max: number | null; min: number | null }
+  >();
+  if (weather) {
+    for (const w of weather.points) {
+      precipByDate.set(w.observedDate, w.precipitation);
+      tempByDate.set(w.observedDate, {
+        avg: w.temperatureAvg,
+        max: w.temperatureMax,
+        min: w.temperatureMin,
+      });
+    }
+  }
 
   return (
     <div style={{ width: "100%", height: 320 }}>
@@ -96,21 +189,18 @@ export function DamChart({ data, weather, damName, fullLvl }: Props) {
             minTickGap={64}
             tick={{ fontSize: 12 }}
           />
-          {/* 左軸：貯水位 */}
           <YAxis
             yAxisId="lvl"
             domain={[yMin, yMax]}
             tick={{ fontSize: 12 }}
             label={{ value: "貯水位 (m)", angle: -90, position: "insideLeft", style: { fontSize: 12 } }}
           />
-          {/* 右軸：流入・放流量 */}
           <YAxis
             yAxisId="flow"
             orientation="right"
             tick={{ fontSize: 12 }}
             label={{ value: "流量 (m³/s)", angle: 90, position: "insideRight", style: { fontSize: 12 } }}
           />
-          {/* 右第2軸：降水量（上から下に伸びるバー = reversed） */}
           <YAxis
             yAxisId="rain"
             orientation="right"
@@ -123,14 +213,16 @@ export function DamChart({ data, weather, damName, fullLvl }: Props) {
             label={{ value: "雨量(mm/日)", angle: 90, position: "insideRight", offset: -34, style: { fontSize: 11, fill: "#0891b2" } }}
           />
           <Tooltip
-            labelFormatter={(v) => formatTick(v as string)}
-            formatter={(v, name) => {
-              if (typeof v !== "number") return ["-", name];
-              return [v.toFixed(2), name];
-            }}
+            content={(p) => (
+              <CustomTooltip
+                {...p}
+                precipByDate={precipByDate}
+                tempByDate={tempByDate}
+                weatherStationName={weather?.name ?? null}
+              />
+            )}
           />
           <Legend />
-          {/* 降水量バー（最初に描いて他の線が前面に） */}
           <Bar
             yAxisId="rain"
             dataKey="precipitation"

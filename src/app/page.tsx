@@ -1,12 +1,24 @@
 import { getDamsWithSeries } from "@/lib/dam-data";
+import { resolvePeriod } from "@/lib/period";
 import { DamChartClient } from "@/components/DamChartClient";
+import { DailySummaryChartClient } from "@/components/DailySummaryChartClient";
 import { DailyReportTable } from "@/components/DailyReportTable";
+import { PeriodSelector } from "@/components/PeriodSelector";
+import { RangeStatsCard } from "@/components/RangeStats";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default async function Home() {
-  const payloads = await getDamsWithSeries(24 * 7);
+type SearchParams = Promise<Record<string, string | undefined>>;
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const params = await searchParams;
+  const period = resolvePeriod(params);
+  const payloads = await getDamsWithSeries(period);
 
   const latestObs = (obs: typeof payloads[number]["observations"]) =>
     [...obs].reverse().find((o) => o.storLvl !== null);
@@ -16,15 +28,20 @@ export default async function Home() {
 
   return (
     <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 font-sans">
-      <header className="mb-8">
+      <header className="mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold">東播用水ダム監視</h1>
         <p className="text-sm text-gray-500 mt-1">
           大川瀬ダム・呑吐ダムの貯水位を 10 分毎に取得。土地改良区の日次貯水率と合わせて表示。
         </p>
       </header>
 
+      <section className="mb-6">
+        <div className="text-xs text-gray-500 mb-2">表示期間: {period.label}</div>
+        <PeriodSelector />
+      </section>
+
       <div className="grid gap-8 lg:grid-cols-1">
-        {payloads.map(({ dam, observations, dailyReports, weather }) => {
+        {payloads.map(({ dam, observations, dailyReports, weather, daily, stats }) => {
           const obs = latestObs(observations);
           const rep = latestReport(dailyReports);
           return (
@@ -77,7 +94,7 @@ export default async function Home() {
                 </div>
               </div>
 
-              <div className="mb-2 text-sm font-medium">過去 7 日間 (10分毎)</div>
+              <div className="mb-2 text-sm font-medium">{period.label} (10 分毎)</div>
               <DamChartClient
                 data={observations}
                 weather={weather}
@@ -90,6 +107,15 @@ export default async function Home() {
                   {weather.label && <span className="ml-1">— {weather.label}</span>}
                 </div>
               )}
+
+              <div className="mt-6 mb-2 text-sm font-medium">日次サマリー（貯水位平均 + 気温 + 降水量）</div>
+              <DailySummaryChartClient
+                data={daily}
+                damName={dam.name}
+                fullLvl={dam.nrmlHighStg}
+              />
+
+              <RangeStatsCard stats={stats} rangeLabel={period.label} />
 
               <details className="mt-4">
                 <summary className="text-sm text-gray-600 cursor-pointer">
@@ -122,6 +148,15 @@ export default async function Home() {
           rel="noreferrer"
         >
           東播用水土地改良区
+        </a>{" "}
+        ・{" "}
+        <a
+          href="https://www.jma.go.jp/bosai/amedas/"
+          className="underline"
+          target="_blank"
+          rel="noreferrer"
+        >
+          気象庁アメダス
         </a>
       </footer>
     </main>
