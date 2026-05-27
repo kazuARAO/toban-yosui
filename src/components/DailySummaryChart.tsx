@@ -54,22 +54,22 @@ export function DailySummaryChart({ data, damName, fullLvl }: Props) {
           <YAxis
             yAxisId="temp"
             orientation="right"
-            tick={{ fontSize: 11, fill: "#dc2626" }}
-            axisLine={{ stroke: "#dc2626" }}
-            tickLine={{ stroke: "#dc2626" }}
+            tick={{ fontSize: 11, fill: "#b91c1c" }}
+            axisLine={{ stroke: "#b91c1c" }}
+            tickLine={{ stroke: "#b91c1c" }}
             domain={["dataMin - 2", "dataMax + 2"]}
-            label={{ value: "気温 (℃)", angle: 90, position: "insideRight", style: { fontSize: 11, fill: "#dc2626" } }}
+            label={{ value: "気温 (℃)", angle: 90, position: "insideRight", style: { fontSize: 11, fill: "#b91c1c" } }}
           />
           <YAxis
             yAxisId="rain"
             orientation="right"
             reversed
             domain={[0, precipMax]}
-            tick={{ fontSize: 10, fill: "#0891b2" }}
-            axisLine={{ stroke: "#0891b2" }}
-            tickLine={{ stroke: "#0891b2" }}
+            tick={{ fontSize: 10, fill: "#0ea5e9" }}
+            axisLine={{ stroke: "#0ea5e9" }}
+            tickLine={{ stroke: "#0ea5e9" }}
             width={36}
-            label={{ value: "雨量(mm/日)", angle: 90, position: "insideRight", offset: -34, style: { fontSize: 11, fill: "#0891b2" } }}
+            label={{ value: "雨量(mm/日)", angle: 90, position: "insideRight", offset: -34, style: { fontSize: 11, fill: "#0ea5e9" } }}
           />
           <Tooltip
             formatter={(v, name) => {
@@ -82,8 +82,8 @@ export function DailySummaryChart({ data, damName, fullLvl }: Props) {
             yAxisId="rain"
             dataKey="precipitation"
             name="降水量"
-            fill="#0891b2"
-            fillOpacity={0.55}
+            fill="#0ea5e9"
+            fillOpacity={0.65}
             maxBarSize={24}
           />
           <Line
@@ -91,7 +91,7 @@ export function DailySummaryChart({ data, damName, fullLvl }: Props) {
             type="monotone"
             dataKey="storLvlAvg"
             name={`${damName} 日平均貯水位`}
-            stroke="#2563eb"
+            stroke="#1e3a8a"
             dot={{ r: 2 }}
             strokeWidth={2}
             connectNulls
@@ -101,7 +101,7 @@ export function DailySummaryChart({ data, damName, fullLvl }: Props) {
             type="monotone"
             dataKey="temperatureMax"
             name="最高気温"
-            stroke="#dc2626"
+            stroke="#b91c1c"
             dot={false}
             strokeWidth={1.4}
             connectNulls
@@ -111,7 +111,7 @@ export function DailySummaryChart({ data, damName, fullLvl }: Props) {
             type="monotone"
             dataKey="temperatureMin"
             name="最低気温"
-            stroke="#f59e0b"
+            stroke="#a16207"
             dot={false}
             strokeWidth={1.4}
             strokeDasharray="3 3"

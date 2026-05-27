@@ -110,7 +110,7 @@ function CustomTooltip(props: CustomTooltipProps) {
     items.push({
       name: `当日降水量${props.weatherStationName ? ` (${props.weatherStationName})` : ""}`,
       value: `${precip.toFixed(1)} mm`,
-      color: "#0891b2",
+      color: "#0ea5e9",
     });
   }
 
@@ -206,11 +206,11 @@ export function DamChart({ data, weather, damName, fullLvl }: Props) {
             orientation="right"
             reversed
             domain={[0, precipMax]}
-            tick={{ fontSize: 10, fill: "#0891b2" }}
-            axisLine={{ stroke: "#0891b2" }}
-            tickLine={{ stroke: "#0891b2" }}
+            tick={{ fontSize: 10, fill: "#0ea5e9" }}
+            axisLine={{ stroke: "#0ea5e9" }}
+            tickLine={{ stroke: "#0ea5e9" }}
             width={36}
-            label={{ value: "雨量(mm/日)", angle: 90, position: "insideRight", offset: -34, style: { fontSize: 11, fill: "#0891b2" } }}
+            label={{ value: "雨量(mm/日)", angle: 90, position: "insideRight", offset: -34, style: { fontSize: 11, fill: "#0ea5e9" } }}
           />
           <Tooltip
             content={(p) => (
@@ -227,8 +227,8 @@ export function DamChart({ data, weather, damName, fullLvl }: Props) {
             yAxisId="rain"
             dataKey="precipitation"
             name={weather ? `降水量 (${weather.name})` : "降水量"}
-            fill="#0891b2"
-            fillOpacity={0.55}
+            fill="#0ea5e9"
+            fillOpacity={0.65}
             maxBarSize={20}
           />
           <Line
@@ -236,7 +236,7 @@ export function DamChart({ data, weather, damName, fullLvl }: Props) {
             type="monotone"
             dataKey="storLvl"
             name={`${damName} 貯水位`}
-            stroke="#2563eb"
+            stroke="#1e3a8a"
             dot={false}
             strokeWidth={2}
             connectNulls={false}
@@ -246,7 +246,7 @@ export function DamChart({ data, weather, damName, fullLvl }: Props) {
             type="monotone"
             dataKey="allSink"
             name="流入量"
-            stroke="#059669"
+            stroke="#15803d"
             dot={false}
             strokeWidth={1.5}
             connectNulls={false}
@@ -256,7 +256,7 @@ export function DamChart({ data, weather, damName, fullLvl }: Props) {
             type="monotone"
             dataKey="allDisch"
             name="放流量"
-            stroke="#d97706"
+            stroke="#dc2626"
             dot={false}
             strokeWidth={1.5}
             connectNulls={false}
