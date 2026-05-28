@@ -1,10 +1,15 @@
 name: scrape-toban
 
 # 土地改良区 toban-yosui.jp の日次「ダム貯水状況」を取得。
-# 公式発表は 9:00 JST なので、9:30 JST = 0:30 UTC に取得。
+# 公式発表は「9:00 現在」と謳うが、実際のサイト更新は 9-11 時頃と幅がある。
+# UPSERT なので複数回実行しても問題なし、空振りも問題なし。
+# 9:30 / 10:30 / 11:30 / 13:30 JST の 4 回 + GH Actions cron 遅延に備える
 on:
   schedule:
     - cron: "30 0 * * *"
+    - cron: "30 1 * * *"
+    - cron: "30 2 * * *"
+    - cron: "30 4 * * *"
   workflow_dispatch:
 
 concurrency:
