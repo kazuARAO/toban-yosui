@@ -60,15 +60,16 @@ export function DailySummaryChart({ data, damName, fullLvl }: Props) {
             domain={["dataMin - 2", "dataMax + 2"]}
             label={{ value: "気温 (℃)", angle: 90, position: "insideRight", style: { fontSize: 11, fill: "#b91c1c" } }}
           />
-          {/* 実質取水量 (m³/s) 用、左寄り内側に隠れて配置 */}
+          {/* 実質取水量 (m³/s)：左の貯水位軸の右隣に独立軸として表示 */}
           <YAxis
             yAxisId="flow"
             orientation="left"
             tick={{ fontSize: 10, fill: "#ea580c" }}
-            axisLine={false}
-            tickLine={false}
-            width={0}
-            hide
+            axisLine={{ stroke: "#ea580c" }}
+            tickLine={{ stroke: "#ea580c" }}
+            domain={[0, "dataMax + 1"]}
+            width={36}
+            label={{ value: "取水(m³/s)", angle: -90, position: "insideLeft", style: { fontSize: 10, fill: "#ea580c" } }}
           />
           <YAxis
             yAxisId="rain"
@@ -133,9 +134,10 @@ export function DailySummaryChart({ data, damName, fullLvl }: Props) {
             dataKey="netWithdrawal"
             name="実質取水量"
             stroke="#ea580c"
-            dot={{ r: 2 }}
-            strokeWidth={1.8}
-            connectNulls={false}
+            dot={{ r: 4, fill: "#ea580c" }}
+            activeDot={{ r: 6 }}
+            strokeWidth={2}
+            connectNulls
           />
         </ComposedChart>
       </ResponsiveContainer>
